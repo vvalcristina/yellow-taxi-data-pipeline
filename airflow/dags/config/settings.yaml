@@ -1,0 +1,19 @@
+# configs/ingestion.yaml
+spark:
+  app_name: "DataIngestionApp"
+  s3a:
+    access_key: "minioadmin"
+    secret_key: "minioadmin123"
+    endpoint: "http://minio:9000"
+    path_style_access: "true"
+    region: "us-east-1"
+
+ingestion:
+  years_months:
+    2023: [1,2,3, 4, 5]
+  input_bucket: "yellow-taxi-files"
+  output_bucket: "prd-yellow-taxi-table"
+  parquet_path: "year={year}/month={month}/yellow_tripdata.parquet"
+parquet:
+  bucket: "yellow-taxi-files"
+  path: "year={year}/month={month}/yellow_tripdata.parquet"
