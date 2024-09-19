@@ -7,6 +7,7 @@ spark:
     endpoint: "http://minio:9000"
     path_style_access: "true"
     region: "us-east-1"
+    impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"  # <--- Adicione esta linha
 
 ingestion:
   years_months:
@@ -15,5 +16,7 @@ ingestion:
   output_bucket: "prd-yellow-taxi-table"
   parquet_path: "year={year}/month={month}/yellow_tripdata.parquet"
 parquet:
-  bucket: "yellow-taxi-files"
+  bucket_bronze: "yellow-taxi-file-staging"     # Bucket onde o arquivo é salvo após o upload
+  bucket_silver: "yellow-taxi-file"  
+  bucket_gold: "prd-yellow-taxi-table"
   path: "year={year}/month={month}/yellow_tripdata.parquet"
