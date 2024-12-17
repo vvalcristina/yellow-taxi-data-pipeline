@@ -50,9 +50,13 @@ class IngestionPipeline:
             .config("spark.hadoop.fs.s3a.access.key", config.get('s3a', {}).get('access_key', '')) \
             .config("spark.hadoop.fs.s3a.secret.key", config.get('s3a', {}).get('secret_key', '')) \
             .config("spark.hadoop.fs.s3a.endpoint", config.get('s3a', {}).get('endpoint', '')) \
-            .config("spark.hadoop.fs.s3a.path.style.access", config.get('s3a', {}).get('path_style_access', '')) \
-            .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+            .config("spark.hadoop.fs.s3a.path.style.access", config.get('s3a', {}).get('path_style_access', 'true')) \
             .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.2.2,com.amazonaws:aws-java-sdk-bundle:1.11.1000") \
+            .config("spark.hadoop.fs.s3a.connection.maximum", "100") \
+            .config("spark.hadoop.fs.s3a.connection.timeout", "5000") \
+            .config("spark.hadoop.fs.s3a.threads.max", "50") \
+            .config("spark.hadoop.fs.s3a.retry.limit", "10") \
+            .config("spark.hadoop.fs.s3a.retry.interval", "1000") \
             .getOrCreate()
     
     def download_file(self, url: str, local_path: str):
@@ -69,41 +73,64 @@ class IngestionPipeline:
         """Baixa um arquivo do bucket S3 especificado para o caminho local."""
         self.logger.info(f"Baixa um arquivo do bucket S3 para o caminho local especificado")
         self.storage.set_bucket(bucket_name)
+
+        self.logger.info(f"s3_path:{s3_path}")
+        self.logger.info(f"local_path:{local_path}")
+        self.logger.info(f"bucket_name:{bucket_name}")
+
         self.storage.download_file(s3_path, local_path)
     
-    def upload_file_bucket(self, local_path:str, bucket_name: str, s3_path:str, year: int, month: int ):
+    def upload_file_bucket(self, url:str, bucket_name: str, s3_path:str, year: int, month: int ):
         """Baixa o arquivo de uma URL e salva no bucket S3 especificado."""
         month_str = f'{month:02d}'
         s3_path = f'yellow_tripdata_{year}-{month_str}.parquet'
         parquet_path = f"s3a://{self.bucket_silver}/year={year}/month={month_str}/yellow_tripdata.parquet"
 
         self.storage.set_bucket(bucket_name)
-        self.storage.upload_file_bucket(local_path,bucket_name,s3_path, year,month)
+        self.storage.upload_file(url, s3_path)
 
+    def ensure_directory_exists(self,directory_path):
+        if not os.path.exists(directory_path):
+            os.makedirs(directory_path)
+            print(f"Diretório criado: {directory_path}")
+        else:
+            print(f"Diretório já existe: {directory_path}")
         
     def process_file(self, year: int, month: int):
         self.logger.info("Processa o arquivo de um mês específico e salva no MinIO.")
         month_str = f"{month:02d}"
-        
+        s3_path = f'yellow_tripdata_{year}-{month_str}.parquet'
+
         # URL do arquivo Parquet 
         file_url = f'https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month_str}.parquet'
-        local_path = f'/opt/airflow/tmp/yellow_tripdata_{year}-{month_str}.parquet'
-        local_file_path  = f'/opt/airflow/tmp/yellow_tripdata_{year}-{month_str}.parquet'
+
+        self.ensure_directory_exists('/opt/airflow/temp')
+
+        path_silver =  f"s3a://{self.bucket_silver}/yellow_tripdata_{year}-{month_str}.parquet"
+
+        local_file_path = '/opt/airflow/temp'
+        #os.getcwd()
+        self.logger.info(f"****** Path local: {local_file_path} *******")
 
         # Baixa o arquivo
-        #self.logger.info(f"****** Baixando arquivo: {file_url} *******")
-        #s3_path = f'yellow_tripdata_{year}-{month_str}.parquet'
-        #self.upload_file_bucket(file_url, year, month, self.bucket_bronze)
+        self.logger.info(f"****** Baixando arquivo: {file_url} *******")
+        s3_path = f'yellow_tripdata_{year}-{month_str}.parquet'
 
-        self.download_file(file_url, local_file_path)
+        self.upload_file_bucket(file_url,self.bucket_silver,s3_path,  year, month)
 
-        # Lê o arquivo no Spark
+        #self.download_file_bucket(s3_path=path_silver,local_path=local_file_path,bucket_name=self.bucket_silver)
+
+
+
+
+    def read_parquet(self):
+        path_silver =  f"s3a://{self.bucket_silver}/*.parquet"
+         # Lê o arquivo no Spark
         try:
-            df: DataFrame = self.spark.read.parquet(local_file_path)
+            df: DataFrame = self.spark.read.parquet(path_silver)
             self.logger.info(f"DataFrame lido com sucesso")
         except Exception as e:
-            self.logger.error(f"Erro ao ler o arquivo Parquet: {e}")
-            return
+            self.logger.error(f"Erro ao ler o arquivo Parquet {path_silver}: {e}")
 
         # Processa o DataFrame
         df_filtered = df.select(
@@ -116,14 +143,14 @@ class IngestionPipeline:
 
         self.logger.info(f"Arquivo filtrado {df_filtered.columns}")
         # Define o caminho dinâmico para salvar no MinIO
-        parquet_path = f"s3a://{self.bucket_silver}/year={year}/month={month_str}/yellow_tripdata.parquet"
+        parquet_path = f"s3a://{self.bucket_gold}/yellow_tripdata.parquet"
 
         # Salva o DataFrame como Parquet no MinIO
 
-        self.upload_file_bucket(local_path=local_path,bucket_name=self.bucket_silver,s3_path=parquet_path, year=year,month =month)
+        #self.upload_file_bucket(local_path=local_file_path,bucket_name=self.bucket_gold,s3_path=parquet_path, year=year,month =month)
         #df_filtered.write.parquet(parquet_path, mode="overwrite")
-        self.logger.info(f"******** Arquivo Parquet {year}-{month_str} salvo com sucesso no MinIO {parquet_path}! *******")
-
+        self.logger.info(f"******** Arquivo Parquet salvo com sucesso no MinIO {parquet_path}! *******")
+        
     def create_hive_table(self, sql_file_path: str):
         """Cria a tabela no Hive usando um arquivo SQL."""
         with open(sql_file_path, 'r') as sql_file:
@@ -137,6 +164,7 @@ class IngestionPipeline:
         for year, months in self.ingestion_config.get('years_months', {}).items():
             for month in months:
                 self.process_file(year, month)
+        self.read_parquet()
         #self.create_hive_table('sql/create_table.sql')
 
 # Execução do pipeline

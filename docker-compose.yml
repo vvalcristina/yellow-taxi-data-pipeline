@@ -11,6 +11,11 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
   
   minio-mc:
     image: minio/mc:latest
@@ -71,7 +76,8 @@ services:
       - "7077:7077"
       - "8081:8081"
     volumes:
-      - /local/tmp:/tmp
+      - spark-data:/tmp
+
 
   spark-worker:
     image: bitnami/spark:3.4.1
@@ -82,7 +88,7 @@ services:
     depends_on:
       - spark-master
     volumes:
-      - /local/tmp:/tmp
+      - spark-data:/tmp
 
   spark:
     build:
@@ -106,7 +112,23 @@ services:
     ports:
       - "4040:4040"
 
+  hadoop:
+    build:
+      context: .
+      dockerfile: config_hadoop/Dockerfile
+    container_name: hadoop
+    ports:
+      - "50070:50070"  # Se necessário para o UI do Hadoop
+    volumes:
+      - ./hadoop-config:/usr/local/hadoop/etc/hadoop
+    environment:
+      HADOOP_HOME: /usr/local/hadoop
+      PATH: /usr/local/hadoop/bin:$PATH
+
 volumes:
   minio-data:
   postgres_data:
   spark_master:
+  hadoop-config:
+  spark-data:
+    driver: local

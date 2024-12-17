@@ -7,3 +7,4 @@ pyarrow==16.1.0
 pandas==2.2.2
 s3fs 
 pyspark==3.4.0
+apache-airflow-providers-apache-spark
